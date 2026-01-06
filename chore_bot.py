@@ -16,6 +16,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 CHORES = 'chores.json'
+CHORE_ROTATION = 'chore_rotation.json'
 
 # Debug message to show bot is online
 @bot.event
@@ -36,6 +37,67 @@ def load_chores():
 def save_chores(chores):
     with open(CHORES, 'w') as f:
         json.dump(chores, f, indent=4)
+
+def load_chore_rotation():
+    try:
+        with open(CHORE_ROTATION, 'r') as f:
+            content = f.read().strip()
+            if not content:
+                return []
+            return json.loads(content)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+    
+def save_chore_rotation(rotation):
+    with open(CHORE_ROTATION, 'w') as f:
+        json.dump(rotation, f, indent=4)
+
+@bot.command()
+async def adduser(ctx, *users: discord.Member):
+    curr_rotation = load_chore_rotation()
+    rotation = []
+    for user in users:
+        if user.id in curr_rotation:
+            await ctx.send(f'{user.mention} is already in the chore rotation.')
+        else:
+            rotation.append(user.id)
+    new_rotation = curr_rotation + rotation
+    save_chore_rotation(new_rotation)
+    if len(rotation) == 1:
+        if len(new_rotation) == 1:
+            await ctx.send(f'Added 1 user to the chore rotation. Total: 1 user.')
+        await ctx.send(f'Added 1 user to the chore rotation. Total: {len(new_rotation)} users.')
+    else:
+        await ctx.send(f'Added {len(rotation)} users to the chore rotation. Total: {len(new_rotation)} users.')
+
+@bot.command()
+async def removeuser(ctx, user: discord.Member):
+    user_id = user.id
+    rotation = load_chore_rotation()
+    if user_id in rotation:
+        user = await bot.fetch_user(user_id)
+        rotation.remove(user_id)
+        save_chore_rotation(rotation)
+        await ctx.send(f'Removed user ID {user.mention} from the chore rotation.')
+
+@bot.command()
+async def clearrotation(ctx):
+    save_chore_rotation([])
+    await ctx.send('Cleared the chore rotation.')
+
+@bot.command()
+async def listrotation(ctx):
+    rotation = load_chore_rotation()
+    if not rotation:
+        await ctx.send('Chore rotation is empty.')
+        return
+
+    message = 'Chore Rotation:\n'
+    for user_id in rotation:
+        user = await bot.fetch_user(user_id)
+        message += f'- {user.mention if user else "Unknown User"}\n'
+
+    await ctx.send(message)
 
 # Command to add a chore with custom frequency
 @bot.command()
@@ -107,7 +169,7 @@ async def donechore(ctx, chore_name: str):
     else:
         await ctx.send(f'Chore "{chore_name}" not found.')
 
-# Command to check next due date for a chore
+# Helper function to check next due date for a chore
 async def __nextchore(ctx, chore_name: str):
     chores = load_chores()
     
@@ -124,6 +186,7 @@ async def __nextchore(ctx, chore_name: str):
     else:
         await ctx.send(f'Chore "{chore_name}" not found.')
 
+# Command to check next due date for a chore
 @bot.command()
 async def nextchore(ctx, chore_name: str):
     await __nextchore(ctx, chore_name)
