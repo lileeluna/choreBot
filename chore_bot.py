@@ -38,6 +38,7 @@ def save_chores(chores):
     with open(CHORES, 'w') as f:
         json.dump(chores, f, indent=4)
 
+# Helper functions to load and save chore rotation
 def load_chore_rotation():
     try:
         with open(CHORE_ROTATION, 'r') as f:
@@ -52,6 +53,7 @@ def save_chore_rotation(rotation):
     with open(CHORE_ROTATION, 'w') as f:
         json.dump(rotation, f, indent=4)
 
+# Command to add users to the chore rotation
 @bot.command()
 async def adduser(ctx, *users: discord.Member):
     curr_rotation = load_chore_rotation()
@@ -70,6 +72,7 @@ async def adduser(ctx, *users: discord.Member):
     else:
         await ctx.send(f'Added {len(rotation)} users to the chore rotation. Total: {len(new_rotation)} users.')
 
+# Command to remove a user from the chore rotation
 @bot.command()
 async def removeuser(ctx, user: discord.Member):
     user_id = user.id
@@ -80,11 +83,13 @@ async def removeuser(ctx, user: discord.Member):
         save_chore_rotation(rotation)
         await ctx.send(f'Removed user ID {user.mention} from the chore rotation.')
 
+# Command to clear the chore rotation
 @bot.command()
 async def clearrotation(ctx):
     save_chore_rotation([])
     await ctx.send('Cleared the chore rotation.')
 
+# Command to list the chore rotation
 @bot.command()
 async def listrotation(ctx):
     rotation = load_chore_rotation()
