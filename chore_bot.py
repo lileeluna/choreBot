@@ -4,7 +4,7 @@ from discord.ext import commands, tasks
 from dotenv import load_dotenv
 import asyncio
 import json
-import datetime
+from datetime import datetime, timezone
 from dateutil.relativedelta import relativedelta
 
 load_dotenv()
@@ -23,8 +23,11 @@ CHORES = 'chores.json'
 def load_chores():
     try:
         with open(CHORES, 'r') as f:
-            return json.load(f)
-    except FileNotFoundError:
+            content = f.read().strip()
+            if not content:
+                return {}
+            return json.loads(content)
+    except (FileNotFoundError, json.JSONDecodeError):
         return {}
     
 def save_chores(chores):
@@ -65,6 +68,34 @@ async def removechore(ctx, chore_name: str):
         del chores[chore_name]
         save_chores(chores)
         await ctx.send(f'Chore "{chore_name}" removed.')
+    else:
+        await ctx.send(f'Chore "{chore_name}" not found.')
+
+@bot.command()
+async def listchores(ctx):
+    chores = load_chores()
+    
+    if not chores:
+        await ctx.send('No chores found.')
+        return
+
+    message = 'Chores:\n'
+    for chore_name, details in chores.items():
+        print(details['user_id'])
+        user = await bot.fetch_user(details['user_id'])
+        last_done = details['last_done'] or 'Never'
+        message += f'- {chore_name}: assigned to {user.mention if user else "Unknown User"}, frequency {details["frequency_days"]} days, last done: {last_done}\n'
+
+    await ctx.send(message)
+
+@bot.command()
+async def donechore(ctx, chore_name: str):
+    chores = load_chores()
+    
+    if chore_name in chores:
+        chores[chore_name]['last_done'] = datetime.now(timezone.utc).date().isoformat()
+        save_chores(chores)
+        await ctx.send(f'Chore "{chore_name}" marked as done.')
     else:
         await ctx.send(f'Chore "{chore_name}" not found.')
 
