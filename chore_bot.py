@@ -4,7 +4,7 @@ from discord.ext import commands, tasks
 from dotenv import load_dotenv
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import re
 
@@ -19,9 +19,38 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 CHORES = 'chores.json'
 CHORE_ROTATION = 'chore_rotation.json'
 
+class ChoreBot(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        self.chore_check.start()
+
+    def cog_unload(self):
+        self.chore_check.cancel()
+
+    @tasks.loop(hours=24)
+    async def chore_check(self):
+        print("Checking for due chores...")
+        chores = load_chores()
+        time_now = datetime.now().astimezone().date()
+        for chore_name, details in chores.items():
+            last_done_str = details['last_done']
+            if not last_done_str:
+                continue
+
+            last_done = datetime.fromisoformat(last_done_str).date()
+            frequency_days = details['frequency_days']
+            next_due = last_done + relativedelta(days=frequency_days)
+
+            if time_now >= next_due - relativedelta(days=3):
+                assigned_to = details['assigned_to']
+                channel = discord.utils.get(self.bot.get_all_channels(), name='bot-test')
+                if channel:
+                    await channel.send(f'<@{assigned_to}> Please complete "{chore_name}" as soon as possible. Thank you!')
+
 # Debug message to show bot is online
 @bot.event
 async def on_ready():
+    await bot.add_cog(ChoreBot(bot))
     print(f'{bot.user.name} is online!')
 
 # Helper functions to load and save chores
@@ -192,7 +221,6 @@ async def listchores(ctx):
 
     message = 'Chores:\n'
     for chore_name, details in chores.items():
-        print(details['assigned_to'])
         user = await bot.fetch_user(details['assigned_to'])
         last_done = details['last_done'] or 'Never'
         last_done_by = details['last_done_by']
@@ -201,6 +229,13 @@ async def listchores(ctx):
         message += f'- {chore_name}: assigned to {user.mention if user else "Unknown User"}, frequency {details["frequency_days"]} days, last done: {last_done}\n'
 
     await ctx.send(message)
+
+# Helper function to schedule chore reminder
+async def schedule_chore_reminder(ctx, chore_name, assigned_to, delay_seconds):
+    await asyncio.sleep(delay_seconds)
+    chores = load_chores()
+    if chore_name in chores:
+        await ctx.send(f'<@{assigned_to}> Please do "{chore_name}" whenever possible. Thank you!')
 
 # Command to mark a chore as done
 @bot.command()
@@ -213,15 +248,19 @@ async def donechore(ctx, chore_name: str):
         return
 
     if user.id == chores[chore_name]['assigned_to']:
-        chores[chore_name]['assigned_to'] = get_next_user_in_rotation(chores[chore_name]['rotation'], user.id)
+        assigned_to = get_next_user_in_rotation(chores[chore_name]['rotation'], user.id)
+        chores[chore_name]['assigned_to'] = assigned_to
 
     chores[chore_name]['last_done_by'] = user.id
-    if chore_name in chores:
-        chores[chore_name]['last_done'] = datetime.now().astimezone().date().isoformat()
-        save_chores(chores)
-        await ctx.send(f'Chore "{chore_name}" marked as done.')
-    else:
-        await ctx.send(f'Chore "{chore_name}" not found.')
+    chores[chore_name]['last_done'] = datetime.now().astimezone().date().isoformat()
+    save_chores(chores)
+    await ctx.send(f'Chore "{chore_name}" marked as done.')
+
+    next_due = chores[chore_name]['frequency_days']
+    remaining_time_in_day = 86400 - (datetime.now().astimezone().hour * 3600 + datetime.now().astimezone().minute * 60 + datetime.now().astimezone().second)
+    next_due_seconds = (next_due * 24 * 60 * 60) + remaining_time_in_day
+    next_due_seconds *= 0.00001
+    asyncio.create_task(schedule_chore_reminder(ctx, chore_name, assigned_to, next_due_seconds))
 
 # Helper function to check next due date for a chore
 async def __nextchore(ctx, chore_name: str):
