@@ -18,6 +18,7 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 
 CHORES = 'chores.json'
 CHORE_ROTATION = 'chore_rotation.json'
+SMILEY_SYSTEM = 'smiley_system.json'
 
 class ChoreBot(commands.Cog):
     def __init__(self, bot):
@@ -41,7 +42,7 @@ class ChoreBot(commands.Cog):
             frequency_days = details['frequency_days']
             next_due = last_done + relativedelta(days=frequency_days)
 
-            if time_now >= next_due - relativedelta(days=3):
+            if time_now >= next_due:
                 assigned_to = details['assigned_to']
                 channel = discord.utils.get(self.bot.get_all_channels(), name='bot-test')
                 if channel:
@@ -82,6 +83,57 @@ def load_chore_rotation():
 def save_chore_rotation(rotation):
     with open(CHORE_ROTATION, 'w') as f:
         json.dump(rotation, f, indent=4)
+
+# Helper functions to load and save smiley system
+def load_smiley_system():
+    try:
+        with open (SMILEY_SYSTEM, 'r') as f:
+            content = f.read().strip()
+            if not content:
+                return {}
+            return json.loads(content)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+    
+def save_smiley_system(smiley_system):
+    with open(SMILEY_SYSTEM, 'w') as f:
+        json.dump(smiley_system, f, indent=4)
+
+# Helper function to add a smiley
+def add_smiley(user_id: int, chore: str):
+    smiley_system = load_smiley_system()
+    if str(user_id) not in smiley_system:
+        smiley_system[str(user_id)] = {}
+    if chore not in smiley_system[str(user_id)]:
+        smiley_system[str(user_id)][chore] = 1
+    else:
+        smiley_system[str(user_id)][chore] += 1
+    save_smiley_system(smiley_system)
+
+# Helper function to remove a smiley
+def add_smiley(user_id: int, chore: str):
+    smiley_system = load_smiley_system()
+    if str(user_id) not in smiley_system:
+        smiley_system[str(user_id)] = {}
+    if chore not in smiley_system[str(user_id)]:
+        smiley_system[str(user_id)][chore] = 0
+    else:
+        smiley_system[str(user_id)][chore] -= 1
+    if smiley_system[str(user_id)][chore] < 0:
+        smiley_system[str(user_id)][chore] = 0
+    save_smiley_system(smiley_system)
+
+@bot.command()
+async def viewsmileys(ctx, user: discord.Member = None):
+    if user is None:
+        user = ctx.author
+    smiley_system = load_smiley_system()
+    user_id = str(user.id)
+    if user_id not in smiley_system or not smiley_system[user_id]:
+        await ctx.send(f'{user.mention} has no smileys recorded.')
+        return
+    for chore, count in smiley_system[user_id].items():
+        await ctx.send(f'{chore.title()}: {user.mention} has {count} smileys.')
 
 # Command to add users to the chore rotation
 @bot.command()
@@ -134,6 +186,7 @@ async def listrotation(ctx):
 
     await ctx.send(message)
 
+# Helper function to get the next user in rotation
 def get_next_user_in_rotation(rotation: list[int], current_user_id: int) -> int:
     if len(rotation) == 1:
         return rotation[0] if rotation else None
@@ -250,6 +303,8 @@ async def donechore(ctx, chore_name: str):
     if user.id == chores[chore_name]['assigned_to']:
         assigned_to = get_next_user_in_rotation(chores[chore_name]['rotation'], user.id)
         chores[chore_name]['assigned_to'] = assigned_to
+    else:
+        pass
 
     chores[chore_name]['last_done_by'] = user.id
     chores[chore_name]['last_done'] = datetime.now().astimezone().date().isoformat()
